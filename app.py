@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify
-import requests
 import os
+import requests
 
 app = Flask(__name__)
 
@@ -8,20 +8,23 @@ ACCESS_TOKEN = os.getenv("ACCESS_TOKEN")
 API_SECRET = os.getenv("API_SECRET")
 
 
+# =========================
+# HEALTH CHECK
+# =========================
 @app.route("/")
 def home():
-    return "Backend online"
+    return jsonify({"status": "backend online"})
 
 
 # =========================
-# WEBHOOK
+# WEBHOOK MERCADO PAGO
 # =========================
 @app.route("/webhook", methods=["POST"])
 def webhook():
 
     data = request.json
 
-    if "data" not in data:
+    if not data or "data" not in data:
         return jsonify({"status": "ignored"})
 
     payment_id = data["data"]["id"]
@@ -34,17 +37,20 @@ def webhook():
 
     pagamento = requests.get(url, headers=headers).json()
 
-    if pagamento["status"] == "approved":
+    if pagamento.get("status") == "approved":
 
-        usuario_id = pagamento["metadata"]["usuario_id"]
+        usuario_id = pagamento.get("metadata", {}).get("usuario_id")
 
-        print(f"Pagamento aprovado para usuário {usuario_id}")
+        print(f"✅ PAGAMENTO APROVADO: {usuario_id}")
+
+        # aqui você ativa o plano no banco depois
+        # ex: SubscriptionService.ativar(usuario_id)
 
     return jsonify({"ok": True})
 
 
 # =========================
-# API SEGURA
+# ATIVAÇÃO DE PLANO (SEGURA)
 # =========================
 @app.route("/ativar-plano", methods=["POST"])
 def ativar_plano():
@@ -57,6 +63,10 @@ def ativar_plano():
     data = request.json
     usuario_id = data.get("usuario_id")
 
-    print(f"Ativar plano PRO para {usuario_id}")
+    print(f"🚀 Plano PRO ativado para: {usuario_id}")
 
-    return jsonify({"status": "ok"})
+    return jsonify({"status": "ok", "plano": "pro"})
+
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
