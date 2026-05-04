@@ -1,72 +1,75 @@
-from flask import Flask, request, jsonify
 import os
-import requests
+from flask import Flask, jsonify
+import psycopg2
 
 app = Flask(__name__)
 
-ACCESS_TOKEN = os.getenv("ACCESS_TOKEN")
-API_SECRET = os.getenv("API_SECRET")
+# =========================================
+# CONFIG POSTGRES (RENDER)
+# =========================================
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 
-# =========================
-# HEALTH CHECK
-# =========================
+# =========================================
+# HEALTH CHECK (Render usa isso)
+# =========================================
 @app.route("/")
 def home():
-    return jsonify({"status": "backend online"})
+    return jsonify({
+        "status": "backend online",
+        "sistema": "SaaS MEI backend",
+        "database": "postgresql"
+    })
 
 
-# =========================
-# WEBHOOK MERCADO PAGO
-# =========================
-@app.route("/webhook", methods=["POST"])
-def webhook():
+# =========================================
+# TESTE REAL DO BANCO POSTGRES
+# =========================================
+@app.route("/test-db")
+def test_db():
+    try:
+        if not DATABASE_URL:
+            return jsonify({
+                "status": "erro",
+                "message": "DATABASE_URL não configurada"
+            }), 500
 
-    data = request.json
+        conn = psycopg2.connect(DATABASE_URL)
+        cursor = conn.cursor()
 
-    if not data or "data" not in data:
-        return jsonify({"status": "ignored"})
+        cursor.execute("SELECT NOW();")
+        time = cursor.fetchone()
 
-    payment_id = data["data"]["id"]
+        cursor.close()
+        conn.close()
 
-    url = f"https://api.mercadopago.com/v1/payments/{payment_id}"
+        return jsonify({
+            "status": "ok",
+            "message": "Conexão com PostgreSQL OK",
+            "server_time": str(time[0])
+        })
 
-    headers = {
-        "Authorization": f"Bearer {ACCESS_TOKEN}"
-    }
-
-    pagamento = requests.get(url, headers=headers).json()
-
-    if pagamento.get("status") == "approved":
-
-        usuario_id = pagamento.get("metadata", {}).get("usuario_id")
-
-        print(f"✅ PAGAMENTO APROVADO: {usuario_id}")
-
-        # aqui você ativa o plano no banco depois
-        # ex: SubscriptionService.ativar(usuario_id)
-
-    return jsonify({"ok": True})
-
-
-# =========================
-# ATIVAÇÃO DE PLANO (SEGURA)
-# =========================
-@app.route("/ativar-plano", methods=["POST"])
-def ativar_plano():
-
-    token = request.headers.get("Authorization")
-
-    if token != f"Bearer {API_SECRET}":
-        return jsonify({"erro": "não autorizado"}), 401
-
-    data = request.json
-    usuario_id = data.get("usuario_id")
-
-    print(f"🚀 Plano PRO ativado para: {usuario_id}")
-
-    return jsonify({"status": "ok", "plano": "pro"})
+    except Exception as e:
+        return jsonify({
+            "status": "erro",
+            "message": str(e)
+        }), 500
 
 
+# =========================================
+# FUTURO SAAS (base pronta)
+# =========================================
+@app.route("/status")
+def status():
+    return jsonify({
+        "saas": "fase 3 ativa",
+        "arquitetura": "render + postgres + flask"
+    })
+
+
+# =========================================
+# EXECUÇÃO LOCAL (IGNORADO NO RENDER)
+# =========================================
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    port = int(os.getenv("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
