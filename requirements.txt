@@ -2,3 +2,4 @@ pyjwt
 psycopg2-binary
 flask
 gunicorn
+mercadopago
