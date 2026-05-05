@@ -4,6 +4,7 @@ from flask import Flask, request, jsonify
 import psycopg2
 import jwt
 from functools import wraps
+import mercadopago
 
 app = Flask(__name__)
 
@@ -12,8 +13,11 @@ app = Flask(__name__)
 # =========================
 SECRET_KEY = os.getenv("SECRET_KEY", "dev_secret")
 DATABASE_URL = os.getenv("DATABASE_URL")
+MP_ACCESS_TOKEN = os.getenv("MP_ACCESS_TOKEN")
 
 app.config["SECRET_KEY"] = SECRET_KEY
+
+mp = mercadopago.SDK(MP_ACCESS_TOKEN)
 
 
 # =========================
@@ -44,22 +48,9 @@ def token_required(f):
             user_id = data["user_id"]
             empresa_id = data["empresa_id"]
             plano = data.get("plano", "free")
-            expira_em = data.get("expira_em")
 
         except:
             return jsonify({"erro": "token inválido"}), 401
-
-        # =========================
-        # BLOQUEIO POR EXPIRAÇÃO
-        # =========================
-        if expira_em:
-            expira = datetime.datetime.fromisoformat(expira_em)
-
-            if datetime.datetime.utcnow() > expira:
-                return jsonify({
-                    "erro": "assinatura expirada",
-                    "acao": "upgrade_plano"
-                }), 403
 
         return f(user_id, empresa_id, plano, *args, **kwargs)
 
@@ -67,40 +58,84 @@ def token_required(f):
 
 
 # =========================
-# LOGIN (gera assinatura simulada)
+# CRIAR PAGAMENTO (MERCADO PAGO)
 # =========================
-@app.route("/login", methods=["POST"])
-def login():
+@app.route("/pagamento", methods=["POST"])
+@token_required
+def criar_pagamento(user_id, empresa_id, plano):
 
-    data = request.json
-    email = data.get("email")
+    dados = request.json
+    valor = float(dados.get("valor", 29.90))
 
-    user_id = 1
-    empresa_id = 1
+    preference_data = {
+        "items": [
+            {
+                "title": "Assinatura SaaS MEI PRO",
+                "quantity": 1,
+                "currency_id": "BRL",
+                "unit_price": valor
+            }
+        ],
+        "external_reference": str(empresa_id),
+        "notification_url": "https://app-mei-backend.onrender.com/webhook"
+    }
 
-    plano = "free"
+    preference_response = mp.preference().create(preference_data)
 
-    expira_em = (datetime.datetime.utcnow() + datetime.timedelta(days=7)).isoformat()
-
-    token = jwt.encode({
-        "user_id": user_id,
-        "empresa_id": empresa_id,
-        "plano": plano,
-        "expira_em": expira_em
-    }, SECRET_KEY, algorithm="HS256")
+    init_point = preference_response["response"]["init_point"]
 
     return jsonify({
-        "token": token,
-        "plano": plano,
-        "expira_em": expira_em
+        "checkout_url": init_point
     })
 
 
 # =========================
-# MIDDLEWARE SAAS CHECK
+# WEBHOOK PAGAMENTO
 # =========================
-def plano_liberado(plano):
-    return plano in ["pro"]
+@app.route("/webhook", methods=["POST"])
+def webhook():
+
+    data = request.json
+
+    try:
+        payment_id = data["data"]["id"]
+    except:
+        return jsonify({"erro": "payload inválido"}), 400
+
+    payment = mp.payment().get(payment_id)
+    status = payment["response"]["status"]
+
+    empresa_id = payment["response"]["external_reference"]
+
+    if status == "approved":
+
+        conn = get_db()
+        cur = conn.cursor()
+
+        # ativa assinatura por 30 dias
+        expira = datetime.datetime.utcnow() + datetime.timedelta(days=30)
+
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS assinaturas (
+                id SERIAL PRIMARY KEY,
+                empresa_id INTEGER,
+                status TEXT,
+                expira_em TIMESTAMP
+            )
+        """)
+
+        cur.execute("""
+            INSERT INTO assinaturas (empresa_id, status, expira_em)
+            VALUES (%s, %s, %s)
+        """, (empresa_id, "ativa", expira))
+
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        return jsonify({"status": "assinatura ativada"})
+
+    return jsonify({"status": "pagamento não aprovado"})
 
 
 # =========================
@@ -111,94 +146,24 @@ def plano_liberado(plano):
 def dashboard(user_id, empresa_id, plano):
 
     return jsonify({
-        "status": "fase 7 saas real ativo",
-        "empresa_id": empresa_id,
-        "plano": plano
+        "status": "fase 8 SaaS real ativo",
+        "plano": plano,
+        "empresa": empresa_id
     })
 
 
 # =========================
-# DADOS COM BLOQUEIO DE PLANO
-# =========================
-@app.route("/dados", methods=["POST"])
-@token_required
-def criar_dado(user_id, empresa_id, plano):
-
-    if plano == "free":
-        return jsonify({
-            "erro": "upgrade necessário",
-            "plano_atual": plano,
-            "acao": "assinar_pro"
-        }), 403
-
-    conn = get_db()
-    cur = conn.cursor()
-
-    data = request.json
-    valor = data.get("valor")
-
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS dados (
-            id SERIAL PRIMARY KEY,
-            empresa_id INTEGER,
-            valor TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-
-    cur.execute("""
-        INSERT INTO dados (empresa_id, valor)
-        VALUES (%s, %s)
-    """, (empresa_id, valor))
-
-    conn.commit()
-    cur.close()
-    conn.close()
-
-    return jsonify({
-        "status": "criado com sucesso",
-        "plano": plano
-    })
-
-
-# =========================
-# UPGRADE PLANO (SIMULADO)
-# =========================
-@app.route("/upgrade", methods=["POST"])
-@token_required
-def upgrade(user_id, empresa_id, plano):
-
-    novo_plano = "pro"
-
-    expira_em = (datetime.datetime.utcnow() + datetime.timedelta(days=30)).isoformat()
-
-    token = jwt.encode({
-        "user_id": user_id,
-        "empresa_id": empresa_id,
-        "plano": novo_plano,
-        "expira_em": expira_em
-    }, SECRET_KEY, algorithm="HS256")
-
-    return jsonify({
-        "status": "upgrade realizado",
-        "novo_plano": novo_plano,
-        "token": token
-    })
-
-
-# =========================
-# HEALTH CHECK
+# HOME
 # =========================
 @app.route("/")
 def home():
     return jsonify({
-        "status": "saas fase 7 ativo",
-        "nivel": "monetizacao",
+        "status": "saas fase 8 ativo",
+        "nivel": "pagamento real integrado",
         "features": [
-            "assinatura",
-            "bloqueio de plano",
-            "expiração",
-            "upgrade"
+            "mercado pago",
+            "webhook",
+            "assinatura automática"
         ]
     })
 
