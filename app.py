@@ -10,21 +10,21 @@ app = Flask(__name__)
 # =========================
 # CONFIG
 # =========================
-SECRET_KEY = os.getenv("SECRET_KEY", "dev_secret_key_change_me")
+SECRET_KEY = os.getenv("SECRET_KEY", "dev_secret")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-app.config['SECRET_KEY'] = SECRET_KEY
+app.config["SECRET_KEY"] = SECRET_KEY
 
 
 # =========================
-# DB CONNECTION
+# DB
 # =========================
 def get_db():
     return psycopg2.connect(DATABASE_URL)
 
 
 # =========================
-# JWT DECORATOR
+# JWT
 # =========================
 def token_required(f):
     @wraps(f)
@@ -32,26 +32,42 @@ def token_required(f):
 
         token = None
 
-        if 'Authorization' in request.headers:
-            token = request.headers['Authorization'].split(" ")[1]
+        if "Authorization" in request.headers:
+            token = request.headers["Authorization"].split(" ")[1]
 
         if not token:
             return jsonify({"erro": "token ausente"}), 401
 
         try:
             data = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+
             user_id = data["user_id"]
             empresa_id = data["empresa_id"]
+            plano = data.get("plano", "free")
+            expira_em = data.get("expira_em")
+
         except:
             return jsonify({"erro": "token inválido"}), 401
 
-        return f(user_id, empresa_id, *args, **kwargs)
+        # =========================
+        # BLOQUEIO POR EXPIRAÇÃO
+        # =========================
+        if expira_em:
+            expira = datetime.datetime.fromisoformat(expira_em)
+
+            if datetime.datetime.utcnow() > expira:
+                return jsonify({
+                    "erro": "assinatura expirada",
+                    "acao": "upgrade_plano"
+                }), 403
+
+        return f(user_id, empresa_id, plano, *args, **kwargs)
 
     return wrapper
 
 
 # =========================
-# LOGIN (gera empresa + user)
+# LOGIN (gera assinatura simulada)
 # =========================
 @app.route("/login", methods=["POST"])
 def login():
@@ -59,112 +75,131 @@ def login():
     data = request.json
     email = data.get("email")
 
-    # SIMULAÇÃO SaaS (fase 5)
-    empresa_id = 1
     user_id = 1
+    empresa_id = 1
+
+    plano = "free"
+
+    expira_em = (datetime.datetime.utcnow() + datetime.timedelta(days=7)).isoformat()
 
     token = jwt.encode({
         "user_id": user_id,
         "empresa_id": empresa_id,
-        "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=24)
+        "plano": plano,
+        "expira_em": expira_em
     }, SECRET_KEY, algorithm="HS256")
 
     return jsonify({
         "token": token,
-        "empresa_id": empresa_id,
-        "user_id": user_id
+        "plano": plano,
+        "expira_em": expira_em
     })
 
 
 # =========================
-# DASHBOARD MULTI-EMPRESA
+# MIDDLEWARE SAAS CHECK
+# =========================
+def plano_liberado(plano):
+    return plano in ["pro"]
+
+
+# =========================
+# DASHBOARD
 # =========================
 @app.route("/dashboard", methods=["GET"])
 @token_required
-def dashboard(user_id, empresa_id):
+def dashboard(user_id, empresa_id, plano):
 
     return jsonify({
-        "status": "saas fase 5 ativo",
-        "user_id": user_id,
-        "empresa_id": empresa_id
+        "status": "fase 7 saas real ativo",
+        "empresa_id": empresa_id,
+        "plano": plano
     })
 
 
 # =========================
-# CRIAR EMPRESA (BASE SAAS)
+# DADOS COM BLOQUEIO DE PLANO
 # =========================
-@app.route("/empresa", methods=["POST"])
+@app.route("/dados", methods=["POST"])
 @token_required
-def criar_empresa(user_id, empresa_id):
+def criar_dado(user_id, empresa_id, plano):
+
+    if plano == "free":
+        return jsonify({
+            "erro": "upgrade necessário",
+            "plano_atual": plano,
+            "acao": "assinar_pro"
+        }), 403
+
+    conn = get_db()
+    cur = conn.cursor()
 
     data = request.json
-    nome = data.get("nome")
-
-    conn = get_db()
-    cur = conn.cursor()
-
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS empresas (
-            id SERIAL PRIMARY KEY,
-            nome TEXT,
-            owner_id INTEGER
-        )
-    """)
-
-    cur.execute(
-        "INSERT INTO empresas (nome, owner_id) VALUES (%s, %s)",
-        (nome, user_id)
-    )
-
-    conn.commit()
-    cur.close()
-    conn.close()
-
-    return jsonify({"status": "empresa criada"})
-
-
-# =========================
-# EXEMPLO DADO POR EMPRESA
-# =========================
-@app.route("/dados", methods=["GET"])
-@token_required
-def dados(user_id, empresa_id):
-
-    conn = get_db()
-    cur = conn.cursor()
+    valor = data.get("valor")
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS dados (
             id SERIAL PRIMARY KEY,
             empresa_id INTEGER,
-            valor TEXT
+            valor TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
 
-    cur.execute(
-        "SELECT * FROM dados WHERE empresa_id = %s",
-        (empresa_id,)
-    )
+    cur.execute("""
+        INSERT INTO dados (empresa_id, valor)
+        VALUES (%s, %s)
+    """, (empresa_id, valor))
 
-    rows = cur.fetchall()
-
+    conn.commit()
     cur.close()
     conn.close()
 
     return jsonify({
-        "empresa_id": empresa_id,
-        "dados": rows
+        "status": "criado com sucesso",
+        "plano": plano
     })
 
 
 # =========================
-# HEALTH
+# UPGRADE PLANO (SIMULADO)
+# =========================
+@app.route("/upgrade", methods=["POST"])
+@token_required
+def upgrade(user_id, empresa_id, plano):
+
+    novo_plano = "pro"
+
+    expira_em = (datetime.datetime.utcnow() + datetime.timedelta(days=30)).isoformat()
+
+    token = jwt.encode({
+        "user_id": user_id,
+        "empresa_id": empresa_id,
+        "plano": novo_plano,
+        "expira_em": expira_em
+    }, SECRET_KEY, algorithm="HS256")
+
+    return jsonify({
+        "status": "upgrade realizado",
+        "novo_plano": novo_plano,
+        "token": token
+    })
+
+
+# =========================
+# HEALTH CHECK
 # =========================
 @app.route("/")
 def home():
     return jsonify({
-        "status": "saas backend online",
-        "fase": 5
+        "status": "saas fase 7 ativo",
+        "nivel": "monetizacao",
+        "features": [
+            "assinatura",
+            "bloqueio de plano",
+            "expiração",
+            "upgrade"
+        ]
     })
 
 
