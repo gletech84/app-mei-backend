@@ -5,19 +5,19 @@ import psycopg2
 app = Flask(__name__)
 
 # =========================
-# CONFIG POSTGRES
+# CONFIGURAÇÃO BANCO
 # =========================
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 # =========================
-# ROTA PRINCIPAL
+# HOME
 # =========================
 @app.route("/")
 def home():
     return jsonify({
         "status": "backend online",
         "saas": "fase 3 ativo",
-        "db": "postgresql"
+        "versao": "1.0"
     })
 
 # =========================
@@ -35,6 +35,24 @@ def test_db():
         cursor.close()
         conn.close()
 
+        return jsonify({
+            "status": "ok",
+            "hora_servidor": str(result[0])
+        })
+
+    except Exception as e:
+        return jsonify({
+            "status": "erro",
+            "message": str(e)
+        }), 500
+
+
+# =========================
+# START LOCAL (APENAS LOCAL)
+# =========================
+if __name__ == "__main__":
+    port = int(os.getenv("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
         return jsonify({
             "status": "ok",
             "time": str(result[0])
