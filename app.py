@@ -10,21 +10,21 @@ app = Flask(__name__)
 # =========================
 # CONFIG
 # =========================
-SECRET_KEY = os.getenv("SECRET_KEY", "dev_secret_key_change_me")
+SECRET_KEY = os.getenv("SECRET_KEY", "dev_secret")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-app.config['SECRET_KEY'] = SECRET_KEY
+app.config["SECRET_KEY"] = SECRET_KEY
 
 
 # =========================
-# DB CONNECTION
+# DB
 # =========================
 def get_db():
     return psycopg2.connect(DATABASE_URL)
 
 
 # =========================
-# JWT DECORATOR
+# JWT
 # =========================
 def token_required(f):
     @wraps(f)
@@ -32,8 +32,8 @@ def token_required(f):
 
         token = None
 
-        if 'Authorization' in request.headers:
-            token = request.headers['Authorization'].split(" ")[1]
+        if "Authorization" in request.headers:
+            token = request.headers["Authorization"].split(" ")[1]
 
         if not token:
             return jsonify({"erro": "token ausente"}), 401
@@ -51,7 +51,16 @@ def token_required(f):
 
 
 # =========================
-# LOGIN (gera empresa + user)
+# PLANO FREE LIMITS
+# =========================
+LIMITES_PLANO = {
+    "free": 50,      # máximo 50 registros/dia
+    "pro": 10000
+}
+
+
+# =========================
+# LOGIN (SaaS base)
 # =========================
 @app.route("/login", methods=["POST"])
 def login():
@@ -59,117 +68,124 @@ def login():
     data = request.json
     email = data.get("email")
 
-    # SIMULAÇÃO SaaS (fase 5)
-    empresa_id = 1
+    # SIMULAÇÃO SaaS
     user_id = 1
+    empresa_id = 1
+    plano = "free"
 
     token = jwt.encode({
         "user_id": user_id,
         "empresa_id": empresa_id,
+        "plano": plano,
         "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=24)
     }, SECRET_KEY, algorithm="HS256")
 
     return jsonify({
         "token": token,
-        "empresa_id": empresa_id,
-        "user_id": user_id
+        "plano": plano
     })
 
 
 # =========================
-# DASHBOARD MULTI-EMPRESA
+# DASHBOARD
 # =========================
 @app.route("/dashboard", methods=["GET"])
 @token_required
 def dashboard(user_id, empresa_id):
 
     return jsonify({
-        "status": "saas fase 5 ativo",
-        "user_id": user_id,
-        "empresa_id": empresa_id
+        "status": "fase 6 saas ativo",
+        "empresa_id": empresa_id,
+        "user_id": user_id
     })
 
 
 # =========================
-# CRIAR EMPRESA (BASE SAAS)
+# CHECAR LIMITE DO PLANO
 # =========================
-@app.route("/empresa", methods=["POST"])
+def check_limit(plano, total_hoje):
+
+    limite = LIMITES_PLANO.get(plano, 50)
+
+    if total_hoje >= limite:
+        return False
+
+    return True
+
+
+# =========================
+# DADOS COM LIMITAÇÃO SAAS
+# =========================
+@app.route("/dados", methods=["POST"])
 @token_required
-def criar_empresa(user_id, empresa_id):
+def criar_dado(user_id, empresa_id):
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    plano = "free"  # depois vem do JWT real
+
+    # contar registros hoje
+    cur.execute("""
+        SELECT COUNT(*) FROM dados
+        WHERE empresa_id = %s
+        AND DATE(created_at) = CURRENT_DATE
+    """, (empresa_id,))
+
+    total = cur.fetchone()[0]
+
+    if not check_limit(plano, total):
+        return jsonify({
+            "erro": "limite do plano atingido",
+            "plano": plano
+        }), 403
 
     data = request.json
-    nome = data.get("nome")
-
-    conn = get_db()
-    cur = conn.cursor()
-
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS empresas (
-            id SERIAL PRIMARY KEY,
-            nome TEXT,
-            owner_id INTEGER
-        )
-    """)
-
-    cur.execute(
-        "INSERT INTO empresas (nome, owner_id) VALUES (%s, %s)",
-        (nome, user_id)
-    )
-
-    conn.commit()
-    cur.close()
-    conn.close()
-
-    return jsonify({"status": "empresa criada"})
-
-
-# =========================
-# EXEMPLO DADO POR EMPRESA
-# =========================
-@app.route("/dados", methods=["GET"])
-@token_required
-def dados(user_id, empresa_id):
-
-    conn = get_db()
-    cur = conn.cursor()
+    valor = data.get("valor")
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS dados (
             id SERIAL PRIMARY KEY,
             empresa_id INTEGER,
-            valor TEXT
+            valor TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
 
-    cur.execute(
-        "SELECT * FROM dados WHERE empresa_id = %s",
-        (empresa_id,)
-    )
+    cur.execute("""
+        INSERT INTO dados (empresa_id, valor)
+        VALUES (%s, %s)
+    """, (empresa_id, valor))
 
-    rows = cur.fetchall()
-
+    conn.commit()
     cur.close()
     conn.close()
 
     return jsonify({
-        "empresa_id": empresa_id,
-        "dados": rows
+        "status": "registro criado",
+        "plano": plano,
+        "usados": total + 1
     })
 
 
 # =========================
-# HEALTH
+# STATUS SAAS
 # =========================
 @app.route("/")
 def home():
     return jsonify({
-        "status": "saas backend online",
-        "fase": 5
+        "status": "saas fase 6 ativo",
+        "features": [
+            "jwt",
+            "multi-empresa",
+            "limite por plano",
+            "controle de uso"
+        ]
     })
 
 
 # =========================
-# RUN
+# RUN LOCAL (IGNORADO NO RENDER)
 # =========================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
