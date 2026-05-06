@@ -14,7 +14,7 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 
 # =========================
-# DB
+# CONEXÃO BANCO
 # =========================
 def get_connection():
     return psycopg2.connect(DATABASE_URL)
@@ -32,7 +32,7 @@ def gerar_token(email):
 
 
 # =========================
-# AUTH MIDDLEWARE
+# MIDDLEWARE AUTH
 # =========================
 def token_required(f):
     @wraps(f)
@@ -78,8 +78,8 @@ def register():
     conn.close()
 
     return jsonify({
-        "email": email,
         "status": "usuário criado",
+        "email": email,
         "user_id": user[0] if user else None
     })
 
@@ -97,7 +97,7 @@ def login():
 
 
 # =========================
-# PROTECTED
+# PERFIL PROTEGIDO
 # =========================
 @app.route("/perfil")
 @token_required
@@ -113,11 +113,11 @@ def perfil():
 # =========================
 @app.route("/")
 def home():
-    return {"status": "SaaS ativo 🚀"}
+    return {"status": "SaaS rodando 🚀"}
 
 
 # =========================
-# RUN
+# START
 # =========================
 if __name__ == "__main__":
     app.run()
