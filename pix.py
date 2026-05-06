@@ -5,7 +5,7 @@ CLIENT_SECRET = "SUA_SECRET"
 BASE_URL = "https://api.gerencianet.com.br"
 
 
-def token():
+def get_token():
     r = requests.post(
         f"{BASE_URL}/oauth/token",
         auth=(CLIENT_ID, CLIENT_SECRET),
@@ -15,9 +15,9 @@ def token():
 
 
 def criar_pix(valor):
-    t = token()
+    token = get_token()
 
-    headers = {"Authorization": f"Bearer {t}"}
+    headers = {"Authorization": f"Bearer {token}"}
 
     body = {
         "calendario": {"expiracao": 3600},
