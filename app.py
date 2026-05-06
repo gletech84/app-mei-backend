@@ -1,51 +1,59 @@
-from flask import Flask, request, jsonify
-import sqlite3
+from flask import Flask, render_template, request, redirect, session, jsonify
 from database import init_db
-from pix_service import criar_cobranca
+from auth import login_user
+from pix import criar_pix
+import sqlite3
 
 app = Flask(__name__)
+app.secret_key = "saas-secret"
 
 init_db()
 
 
-# =========================
-# 🧑 CRIAR USUÁRIO
-# =========================
-@app.route("/register", methods=["POST"])
-def register():
-    data = request.json
+# ======================
+# LOGIN
+# ======================
+@app.route("/", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        email = request.form["email"]
+        senha = request.form["senha"]
+
+        if login_user(email, senha):
+            return redirect("/dashboard")
+
+    return render_template("login.html")
+
+
+# ======================
+# DASHBOARD
+# ======================
+@app.route("/dashboard")
+def dashboard():
+    if "user_id" not in session:
+        return redirect("/")
 
     conn = sqlite3.connect("saas.db")
     c = conn.cursor()
 
-    c.execute(
-        "INSERT INTO users (email, senha, plano) VALUES (?, ?, ?)",
-        (data["email"], data["senha"], data.get("plano", "basico"))
-    )
+    c.execute("SELECT * FROM users WHERE id=?", (session["user_id"],))
+    user = c.fetchone()
 
-    conn.commit()
-    conn.close()
-
-    return jsonify({"status": "usuario criado"})
+    return render_template("dashboard.html", user=user)
 
 
-# =========================
-# 💰 GERAR PIX
-# =========================
-@app.route("/checkout", methods=["POST"])
+# ======================
+# CHECKOUT PIX
+# ======================
+@app.route("/checkout")
 def checkout():
-    data = request.json
-
-    valor = data.get("valor", "10.00")
-
-    pix = criar_cobranca(valor, "SUA_CHAVE_PIX")
-
+    pix = criar_pix("10.00")
     return jsonify(pix)
 
 
-# =========================
-# 🔔 WEBHOOK PIX
-# =========================
+# ======================
+# WEBHOOK PIX
+# ======================
 @app.route("/webhook/pix", methods=["POST"])
 def webhook():
     data = request.json
@@ -60,20 +68,12 @@ def webhook():
               (txid, status, 1))
 
     if status == "CONCLUIDA":
-        c.execute("UPDATE users SET ativo = 1 WHERE id = 1")
+        c.execute("UPDATE users SET ativo=1 WHERE id=1")
 
     conn.commit()
     conn.close()
 
     return jsonify({"ok": True})
-
-
-# =========================
-# 🌐 STATUS
-# =========================
-@app.route("/")
-def home():
-    return jsonify({"status": "SAAS PIX ONLINE"})
 
 
 if __name__ == "__main__":
