@@ -14,15 +14,6 @@ def init_db():
     )
     """)
 
-    c.execute("""
-    CREATE TABLE IF NOT EXISTS pagamentos (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        txid TEXT,
-        status TEXT,
-        user_id INTEGER
-    )
-    """)
-
     conn.commit()
     conn.close()
 
