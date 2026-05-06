@@ -1,39 +1,109 @@
-from flask import Flask, request, jsonify
+# app.py
 
-from users.user_service import registrar_ou_buscar
-from auth.jwt import gerar_token
-from webhooks.mercadopago_webhook import webhook
+import os
+import psycopg2
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+
+# ==============================
+# CONFIG
+# ==============================
 
 app = Flask(__name__)
-app.register_blueprint(webhook)
+CORS(app)
 
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+# ==============================
+# CONEXÃO
+# ==============================
+
+def get_connection():
+    return psycopg2.connect(DATABASE_URL)
+
+# ==============================
+# HEALTH CHECK
+# ==============================
 
 @app.route("/")
 def home():
-    return jsonify({
-        "status": "SAAS STARTUP FASE 11 ATIVO"
-    })
+    return jsonify({"status": "backend online"})
+
+# ==============================
+# CADASTRO DE USUÁRIO
+# ==============================
+
+@app.route("/register", methods=["POST"])
+def register():
+    data = request.get_json()
+
+    email = data.get("email")
+
+    if not email:
+        return jsonify({"erro": "Email obrigatório"}), 400
+
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+
+        cur.execute(
+            "INSERT INTO users (email) VALUES (%s) RETURNING id;",
+            (email,)
+        )
+
+        user_id = cur.fetchone()[0]
+
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        return jsonify({
+            "status": "usuário criado",
+            "user_id": user_id,
+            "email": email
+        })
+
+    except psycopg2.errors.UniqueViolation:
+        return jsonify({"erro": "Email já cadastrado"}), 400
+
+    except Exception as e:
+        return jsonify({"erro": str(e)}), 500
+
+# ==============================
+# LISTAR USUÁRIOS (TESTE)
+# ==============================
+
+@app.route("/users", methods=["GET"])
+def listar_users():
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+
+        cur.execute("SELECT id, email, plano, assinatura_ativa FROM users;")
+        rows = cur.fetchall()
+
+        users = []
+        for r in rows:
+            users.append({
+                "id": r[0],
+                "email": r[1],
+                "plano": r[2],
+                "assinatura_ativa": r[3]
+            })
+
+        cur.close()
+        conn.close()
+
+        return jsonify(users)
+
+    except Exception as e:
+        return jsonify({"erro": str(e)}), 500
 
 
-@app.route("/login", methods=["POST"])
-def login():
-    email = request.json.get("email")
-
-    user = registrar_ou_buscar(email)
-
-    token = gerar_token(email)
-
-    return jsonify({
-        "token": token,
-        "user": {
-            "email": user[1],
-            "plano": user[2],
-            "assinatura": user[3]
-        }
-    })
-
+# ==============================
+# START (Render usa gunicorn)
+# ==============================
 
 if __name__ == "__main__":
-    import os
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
