@@ -1,7 +1,7 @@
 Flask
-gunicorn
-psycopg2-binary
-mercadopago
-PyJWT
 flask-cors
+psycopg2-binary
+PyJWT
+gunicorn
 requests
+mercadopago
