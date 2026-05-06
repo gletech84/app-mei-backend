@@ -19,7 +19,12 @@ def buscar_usuario(email):
     conn = get_conn()
     cur = conn.cursor()
 
-    cur.execute("SELECT id, email, plano, assinatura_ativa FROM users WHERE email=%s", (email,))
+    cur.execute("""
+        SELECT id, email, plano, assinatura_ativa
+        FROM users
+        WHERE email = %s
+    """, (email,))
+
     user = cur.fetchone()
 
     cur.close()
@@ -36,7 +41,7 @@ def ativar_assinatura(email):
         UPDATE users
         SET assinatura_ativa = TRUE,
             plano = 'pro'
-        WHERE email=%s
+        WHERE email = %s
     """, (email,))
 
     conn.commit()
