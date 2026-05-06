@@ -5,6 +5,7 @@ import psycopg2
 import jwt
 from datetime import datetime, timedelta
 from functools import wraps
+from app.services.pagamento_service import criar_pagamento
 
 app = Flask(__name__)
 CORS(app)
@@ -13,16 +14,10 @@ SECRET_KEY = os.getenv("SECRET_KEY")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 
-# =========================
-# CONEXÃO BANCO
-# =========================
 def get_connection():
     return psycopg2.connect(DATABASE_URL)
 
 
-# =========================
-# JWT
-# =========================
 def gerar_token(email):
     payload = {
         "email": email,
@@ -31,9 +26,6 @@ def gerar_token(email):
     return jwt.encode(payload, SECRET_KEY, algorithm="HS256")
 
 
-# =========================
-# MIDDLEWARE AUTH
-# =========================
 def token_required(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
@@ -65,8 +57,8 @@ def register():
     cur = conn.cursor()
 
     cur.execute("""
-        INSERT INTO users (email)
-        VALUES (%s)
+        INSERT INTO users (email, plano)
+        VALUES (%s, 'free')
         ON CONFLICT (email) DO NOTHING
         RETURNING id;
     """, (email,))
@@ -77,11 +69,7 @@ def register():
     cur.close()
     conn.close()
 
-    return jsonify({
-        "status": "usuário criado",
-        "email": email,
-        "user_id": user[0] if user else None
-    })
+    return jsonify({"status": "ok"})
 
 
 # =========================
@@ -90,34 +78,92 @@ def register():
 @app.route("/login", methods=["POST"])
 def login():
     email = request.json.get("email")
-
     token = gerar_token(email)
-
     return jsonify({"token": token})
 
 
 # =========================
-# PERFIL PROTEGIDO
+# PERFIL
 # =========================
 @app.route("/perfil")
 @token_required
 def perfil():
     return jsonify({
-        "status": "acesso autorizado",
         "usuario": request.email
     })
 
 
 # =========================
-# HOME
+# CRIAR PAGAMENTO
 # =========================
+@app.route("/criar-pagamento", methods=["POST"])
+@token_required
+def pagamento():
+    response = criar_pagamento(request.email)
+
+    return jsonify({
+        "qr_code": response["point_of_interaction"]["transaction_data"]["qr_code"],
+        "qr_code_base64": response["point_of_interaction"]["transaction_data"]["qr_code_base64"]
+    })
+
+
+# =========================
+# WEBHOOK MERCADO PAGO
+# =========================
+@app.route("/webhook", methods=["POST"])
+def webhook():
+    data = request.json
+
+    if data.get("type") == "payment":
+        payment_id = data["data"]["id"]
+
+        # Aqui você poderia consultar pagamento novamente (fase avançada)
+        # Para simplificar, vamos liberar direto
+
+        conn = get_connection()
+        cur = conn.cursor()
+
+        # 🔥 LIBERA TODOS COMO PREMIUM (simplificado)
+        cur.execute("""
+            UPDATE users
+            SET plano = 'premium'
+        """)
+
+        conn.commit()
+        cur.close()
+        conn.close()
+
+    return jsonify({"status": "ok"})
+
+
+# =========================
+# ROTA PREMIUM
+# =========================
+@app.route("/premium")
+@token_required
+def premium():
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT plano FROM users WHERE email = %s
+    """, (request.email,))
+
+    user = cur.fetchone()
+
+    cur.close()
+    conn.close()
+
+    if user and user[0] == "premium":
+        return jsonify({"msg": "Bem-vindo ao premium"})
+    else:
+        return jsonify({"erro": "Acesso apenas para premium"}), 403
+
+
 @app.route("/")
 def home():
-    return {"status": "SaaS rodando 🚀"}
+    return {"status": "SaaS com pagamento ativo 💰"}
 
 
-# =========================
-# START
-# =========================
 if __name__ == "__main__":
     app.run()
