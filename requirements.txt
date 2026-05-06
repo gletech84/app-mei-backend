@@ -1,4 +1,4 @@
-flask==3.0.0
-requests==2.31.0
-qrcode[pil]==7.4.2
-pillow==10.4.0
+flask
+requests
+qrcode
+pillow
