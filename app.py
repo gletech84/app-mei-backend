@@ -3,16 +3,31 @@
 from flask import Flask, request, jsonify
 import requests
 import base64
-import qrcode
 from io import BytesIO
+
+# 🔥 QRCode (com fallback automático)
+try:
+    import qrcode
+    QR_AVAILABLE = True
+except ImportError:
+    QR_AVAILABLE = False
 
 app = Flask(__name__)
 
-# 🔐 TOKEN MERCADO PAGO (COLOQUE O SEU)
+# 🔐 COLOQUE SEU TOKEN DE PRODUÇÃO AQUI
 ACCESS_TOKEN = "SEU_ACCESS_TOKEN_AQUI"
 
+
 # =========================
-# LOGIN (TESTE)
+# HEALTH CHECK
+# =========================
+@app.route("/", methods=["GET"])
+def home():
+    return jsonify({"status": "online"}), 200
+
+
+# =========================
+# LOGIN (SIMPLES)
 # =========================
 @app.route("/login", methods=["POST"])
 def login():
@@ -34,57 +49,109 @@ def pagamento():
         "Content-Type": "application/json"
     }
 
-    data = {
+    payload = {
         "transaction_amount": 10,
         "description": "Assinatura App MEI",
         "payment_method_id": "pix",
         "payer": {
-            "email": "teste@mei.com"
+            "email": "cliente@teste.com",
+            "first_name": "Cliente",
+            "last_name": "Teste",
+            "identification": {
+                "type": "CPF",
+                "number": "19119119100"
+            }
         }
     }
 
-    response = requests.post(url, json=data, headers=headers)
-    mp_data = response.json()
-
     try:
-        # 🔥 PEGA O PIX
-        qr_code = mp_data["point_of_interaction"]["transaction_data"]["qr_code"]
+        response = requests.post(url, json=payload, headers=headers)
 
-        # 🔥 CORREÇÃO CRÍTICA (REMOVE ESPAÇOS)
-        qr_code = qr_code.replace(" ", "").strip()
+        # 🔥 TRATAMENTO SE NÃO FOR JSON
+        try:
+            mp_data = response.json()
+        except Exception:
+            return jsonify({
+                "erro": "Resposta não é JSON",
+                "status_code": response.status_code,
+                "texto": response.text
+            }), 500
 
-        # 🔥 GERA IMAGEM QR CODE
-        qr = qrcode.make(qr_code)
-        buffer = BytesIO()
-        qr.save(buffer, format="PNG")
-        qr_base64 = base64.b64encode(buffer.getvalue()).decode()
+        # 🔥 LOG COMPLETO (DEBUG)
+        print("MP RESPONSE:", mp_data)
+
+        # 🔥 VALIDAÇÃO DE ERRO DO MP
+        if "error" in mp_data:
+            return jsonify({
+                "erro": "Erro do Mercado Pago",
+                "detalhe": mp_data
+            }), 400
+
+        # 🔥 EXTRAÇÃO SEGURA
+        try:
+            qr_code = mp_data["point_of_interaction"]["transaction_data"]["qr_code"]
+        except KeyError:
+            return jsonify({
+                "erro": "QR Code não encontrado",
+                "resposta_mp": mp_data
+            }), 500
+
+        # 🔥 CORREÇÃO CRÍTICA
+        qr_code = qr_code.replace(" ", "").replace("\n", "").strip()
+
+        qr_base64 = None
+
+        # 🔥 GERA IMAGEM SE LIB DISPONÍVEL
+        if QR_AVAILABLE:
+            try:
+                qr = qrcode.make(qr_code)
+                buffer = BytesIO()
+                qr.save(buffer, format="PNG")
+                qr_base64 = base64.b64encode(buffer.getvalue()).decode()
+            except Exception as e:
+                print("Erro ao gerar QR imagem:", e)
 
         return jsonify({
+            "status": "ok",
             "qr_code": qr_code,
             "qr_code_base64": qr_base64
-        })
+        }), 200
 
     except Exception as e:
         return jsonify({
-            "erro": "Erro ao gerar PIX",
-            "detalhe": str(e),
-            "resposta_mp": mp_data
+            "erro": "Falha na requisição",
+            "detalhe": str(e)
         }), 500
 
 
 # =========================
-# WEBHOOK (OBRIGATÓRIO)
+# WEBHOOK (CONFIRMAÇÃO)
 # =========================
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    data = request.json
-    print("🔔 WEBHOOK RECEBIDO:", data)
 
-    return jsonify({"status": "ok"}), 200
+    try:
+        data = request.json
+
+        print("🔔 WEBHOOK RECEBIDO:")
+        print(data)
+
+        # 🔥 EXEMPLO DE TRATAMENTO
+        if data and "type" in data:
+            if data["type"] == "payment":
+                print("💰 PAGAMENTO RECEBIDO")
+
+        return jsonify({"status": "ok"}), 200
+
+    except Exception as e:
+        return jsonify({
+            "erro": "Erro no webhook",
+            "detalhe": str(e)
+        }), 500
 
 
 # =========================
-# START
+# START APP
 # =========================
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(host="0.0.0.0", port=10000)
