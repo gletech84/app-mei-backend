@@ -1,70 +1,16 @@
-<!DOCTYPE html>
-<html lang="pt-br">
-<head>
-    <meta charset="UTF-8">
-    <title>Dashboard SaaS</title>
+<h1>Dashboard SaaS</h1>
 
-    <style>
-        body {
-            font-family: Arial;
-            background: #0f172a;
-            color: white;
-            padding: 20px;
-        }
+{% if user %}
 
-        .card {
-            background: #1e293b;
-            padding: 20px;
-            border-radius: 12px;
-            width: 400px;
-        }
+<p>ID: {{ user[0] }}</p>
+<p>Email: {{ user[1] }}</p>
+<p>Plano: {{ user[3] }}</p>
 
-        .ativo {
-            color: #22c55e;
-        }
+{% if user[4] == 1 %}
+    <h2>ATIVO 🟢</h2>
+{% else %}
+    <h2>INATIVO 🔴</h2>
+    <a href="/checkout">Ativar com PIX</a>
+{% endif %}
 
-        .inativo {
-            color: #ef4444;
-        }
-
-        a {
-            display: inline-block;
-            margin-top: 10px;
-            background: #3b82f6;
-            padding: 10px;
-            border-radius: 6px;
-            color: white;
-            text-decoration: none;
-        }
-    </style>
-</head>
-
-<body>
-
-<div class="card">
-
-    <h1>Dashboard SaaS</h1>
-
-    {% if user %}
-
-        <p><strong>ID:</strong> {{ user[0] }}</p>
-        <p><strong>Email:</strong> {{ user[1] }}</p>
-        <p><strong>Plano:</strong> {{ user[3] }}</p>
-
-        {% if user[4] == 1 %}
-            <h2 class="ativo">Status: ATIVO 🟢</h2>
-            <p>Acesso liberado ao sistema</p>
-        {% else %}
-            <h2 class="inativo">Status: INATIVO 🔴</h2>
-            <p>Seu acesso está bloqueado</p>
-            <a href="/checkout">Ativar com PIX</a>
-        {% endif %}
-
-    {% else %}
-        <p>Usuário não encontrado</p>
-    {% endif %}
-
-</div>
-
-</body>
-</html>
+{% endif %}
