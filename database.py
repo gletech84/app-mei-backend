@@ -25,3 +25,14 @@ def init_db():
 
     conn.commit()
     conn.close()
+
+
+def get_user(email, senha):
+    conn = sqlite3.connect("saas.db")
+    c = conn.cursor()
+
+    c.execute("SELECT * FROM users WHERE email=? AND senha=?", (email, senha))
+    user = c.fetchone()
+
+    conn.close()
+    return user
