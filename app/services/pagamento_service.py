@@ -5,7 +5,6 @@ MP_ACCESS_TOKEN = os.getenv("MP_ACCESS_TOKEN")
 
 sdk = mercadopago.SDK(MP_ACCESS_TOKEN)
 
-
 def criar_pagamento(email):
     payment_data = {
         "transaction_amount": 19.90,
