@@ -2,7 +2,7 @@ from flask import Flask, request, jsonify
 
 from users.user_service import registrar_ou_buscar
 from auth.jwt import gerar_token
-from billing.checkout import criar_checkout
+from billing.subscription_service import processar_pagamento
 from webhooks.mercadopago_webhook import webhook
 
 app = Flask(__name__)
@@ -32,15 +32,7 @@ def login():
     })
 
 
-@app.route("/checkout", methods=["POST"])
-def checkout():
-    email = request.json.get("email")
-    plano = request.json.get("plano", "pro")
-
-    link = criar_checkout(email, plano)
-
-    return jsonify({"checkout": link})
-
-
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+    import os
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
