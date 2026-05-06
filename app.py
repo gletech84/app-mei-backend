@@ -15,18 +15,24 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 MP_ACCESS_TOKEN = os.getenv("MP_ACCESS_TOKEN")
 
 
-# 🔗 CONEXÃO COM BANCO
+# =========================
+# CONEXÃO BANCO
+# =========================
 def get_connection():
     return psycopg2.connect(DATABASE_URL)
 
 
-# 🧪 ROTA TESTE
+# =========================
+# HOME
+# =========================
 @app.route("/")
 def home():
-    return "API ONLINE 🚀"
+    return {"status": "API ONLINE 🚀"}
 
 
-# 👤 REGISTRO
+# =========================
+# REGISTER
+# =========================
 @app.route("/register", methods=["POST"])
 def register():
     data = request.json
@@ -39,7 +45,12 @@ def register():
         conn = get_connection()
         cur = conn.cursor()
 
-        cur.execute("INSERT INTO users (email) VALUES (%s) RETURNING id;", (email,))
+        cur.execute("""
+            INSERT INTO users (email, plano)
+            VALUES (%s, 'free')
+            RETURNING id;
+        """, (email,))
+
         user_id = cur.fetchone()[0]
 
         conn.commit()
@@ -56,7 +67,9 @@ def register():
         return jsonify({"erro": str(e)}), 500
 
 
-# 🔐 LOGIN (GERA TOKEN)
+# =========================
+# LOGIN (JWT CORRIGIDO)
+# =========================
 @app.route("/login", methods=["POST"])
 def login():
     data = request.json
@@ -65,15 +78,23 @@ def login():
     if not email:
         return jsonify({"erro": "Email obrigatório"}), 400
 
-    token = jwt.encode({
+    payload = {
         "email": email,
         "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=24)
-    }, SECRET_KEY, algorithm="HS256")
+    }
+
+    token = jwt.encode(payload, SECRET_KEY, algorithm="HS256")
+
+    # 🔥 GARANTE STRING (corrige erro "Not enough segments")
+    if isinstance(token, bytes):
+        token = token.decode("utf-8")
 
     return jsonify({"token": token})
 
 
-# 🔒 ROTA PROTEGIDA
+# =========================
+# ROTA PROTEGIDA
+# =========================
 @app.route("/protegido", methods=["GET"])
 def protegido():
     auth_header = request.headers.get("Authorization")
@@ -94,7 +115,9 @@ def protegido():
         return jsonify({"erro": "Token inválido"}), 401
 
 
-# 💰 CRIAR PAGAMENTO PIX
+# =========================
+# CRIAR PAGAMENTO PIX
+# =========================
 @app.route("/criar-pagamento", methods=["POST"])
 def criar_pagamento():
     try:
@@ -119,7 +142,6 @@ def criar_pagamento():
         }
 
         payment = sdk.payment().create(payment_data)
-
         response = payment["response"]
 
         qr_code = response["point_of_interaction"]["transaction_data"]["qr_code"]
@@ -134,6 +156,8 @@ def criar_pagamento():
         return jsonify({"erro": str(e)}), 500
 
 
-# ▶️ START (necessário para Render)
+# =========================
+# START
+# =========================
 if __name__ == "__main__":
     app.run(debug=True)
