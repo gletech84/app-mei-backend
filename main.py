@@ -1,13 +1,8 @@
-# backend/main.py
-# STATUS: NOVO
-# RESPONSABILIDADE: API SaaS (autenticação + sync)
-
 from fastapi import FastAPI
 from pydantic import BaseModel
 from datetime import datetime
 
 app = FastAPI()
-
 
 # =========================
 # MODELOS
@@ -23,10 +18,18 @@ class SyncModel(BaseModel):
 
 
 # =========================
-# BANCO SIMULADO (DEMO)
+# BANCO SIMULADO (TEMPORÁRIO)
 # =========================
 USERS = {}
 DATA = {}
+
+
+# =========================
+# HEALTH CHECK (RENDER)
+# =========================
+@app.get("/")
+def home():
+    return {"status": "ok", "service": "saas-backend"}
 
 
 # =========================
@@ -35,7 +38,6 @@ DATA = {}
 @app.post("/login")
 def login(data: LoginModel):
 
-    # MOCK simples (depois liga no DB real)
     if data.email == "admin" and data.senha == "123":
         return {
             "user_id": "1",
@@ -47,24 +49,24 @@ def login(data: LoginModel):
 
 
 # =========================
-# SYNC UP (APP → CLOUD)
+# SYNC UP
 # =========================
 @app.post("/sync/up")
 def sync_up(data: SyncModel):
 
     DATA[data.user_id] = {
         "payload": data.payload,
-        "updated_at": datetime.now()
+        "updated_at": datetime.utcnow().isoformat()
     }
 
     return {
         "status": "synced",
-        "timestamp": str(datetime.now())
+        "timestamp": datetime.utcnow().isoformat()
     }
 
 
 # =========================
-# SYNC DOWN (CLOUD → APP)
+# SYNC DOWN
 # =========================
 @app.get("/sync/down/{user_id}")
 def sync_down(user_id: str):
