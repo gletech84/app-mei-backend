@@ -1,126 +1,90 @@
+# app.py
+
 from flask import Flask, request, jsonify
 import requests
 import base64
+import qrcode
 from io import BytesIO
-from PIL import Image
 
 app = Flask(__name__)
 
-# 🔐 TOKEN MERCADO PAGO (PRODUÇÃO)
+# 🔐 TOKEN MERCADO PAGO (COLOQUE O SEU)
 ACCESS_TOKEN = "SEU_ACCESS_TOKEN_AQUI"
 
-# =========================================
-# 🔹 HEALTH CHECK
-# =========================================
-@app.route("/", methods=["GET"])
-def home():
-    return "API APP MEI ONLINE 🚀"
+# =========================
+# LOGIN (TESTE)
+# =========================
+@app.route("/login", methods=["POST"])
+def login():
+    return jsonify({
+        "token": "fake-jwt-token"
+    })
 
 
-# =========================================
-# 🔹 CRIAR PAGAMENTO PIX
-# =========================================
-@app.route("/criar-pagamento", methods=["POST"])
-def criar_pagamento():
+# =========================
+# GERAR PAGAMENTO PIX
+# =========================
+@app.route("/pagamento", methods=["POST"])
+def pagamento():
+
+    url = "https://api.mercadopago.com/v1/payments"
+
+    headers = {
+        "Authorization": f"Bearer {ACCESS_TOKEN}",
+        "Content-Type": "application/json"
+    }
+
+    data = {
+        "transaction_amount": 10,
+        "description": "Assinatura App MEI",
+        "payment_method_id": "pix",
+        "payer": {
+            "email": "teste@mei.com"
+        }
+    }
+
+    response = requests.post(url, json=data, headers=headers)
+    mp_data = response.json()
+
     try:
-        data = request.json
+        # 🔥 PEGA O PIX
+        qr_code = mp_data["point_of_interaction"]["transaction_data"]["qr_code"]
 
-        valor = data.get("valor", 10.0)
-        descricao = data.get("descricao", "Pagamento App MEI")
+        # 🔥 CORREÇÃO CRÍTICA (REMOVE ESPAÇOS)
+        qr_code = qr_code.replace(" ", "").strip()
 
-        url = "https://api.mercadopago.com/v1/payments"
-
-        headers = {
-            "Authorization": f"Bearer {ACCESS_TOKEN}",
-            "Content-Type": "application/json"
-        }
-
-        body = {
-            "transaction_amount": float(valor),
-            "description": descricao,
-            "payment_method_id": "pix",
-            "payer": {
-                "email": "cliente@teste.com"
-            }
-        }
-
-        response = requests.post(url, json=body, headers=headers)
-
-        if response.status_code not in [200, 201]:
-            return jsonify({
-                "erro": "Erro ao criar pagamento",
-                "detalhes": response.text
-            }), 400
-
-        pagamento = response.json()
-
-        # 🔹 QR Code texto (PIX copia e cola)
-        qr_code = pagamento["point_of_interaction"]["transaction_data"]["qr_code"]
-
-        # 🔹 Gerar imagem SEM biblioteca qrcode
-        img = gerar_qr_base64(qr_code)
+        # 🔥 GERA IMAGEM QR CODE
+        qr = qrcode.make(qr_code)
+        buffer = BytesIO()
+        qr.save(buffer, format="PNG")
+        qr_base64 = base64.b64encode(buffer.getvalue()).decode()
 
         return jsonify({
             "qr_code": qr_code,
-            "qr_code_base64": img
+            "qr_code_base64": qr_base64
         })
 
     except Exception as e:
-        return jsonify({"erro": str(e)}), 500
+        return jsonify({
+            "erro": "Erro ao gerar PIX",
+            "detalhe": str(e),
+            "resposta_mp": mp_data
+        }), 500
 
 
-# =========================================
-# 🔹 GERAR QR BASE64 (SEM qrcode lib)
-# =========================================
-def gerar_qr_base64(texto):
-    """
-    Gera QR Code usando API externa (sem precisar instalar qrcode)
-    """
-    try:
-        api_qr = "https://api.qrserver.com/v1/create-qr-code/"
-
-        params = {
-            "data": texto,
-            "size": "300x300"
-        }
-
-        response = requests.get(api_qr, params=params)
-
-        img = Image.open(BytesIO(response.content))
-
-        buffer = BytesIO()
-        img.save(buffer, format="PNG")
-
-        return base64.b64encode(buffer.getvalue()).decode()
-
-    except Exception as e:
-        return ""
-
-
-# =========================================
-# 🔹 WEBHOOK MERCADO PAGO
-# =========================================
+# =========================
+# WEBHOOK (OBRIGATÓRIO)
+# =========================
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    try:
-        data = request.json
+    data = request.json
+    print("🔔 WEBHOOK RECEBIDO:", data)
 
-        print("📩 WEBHOOK RECEBIDO:")
-        print(data)
-
-        # 🔹 Aqui você pode tratar pagamento aprovado
-        # exemplo:
-        # if data["type"] == "payment":
-        #     buscar pagamento e liberar acesso
-
-        return jsonify({"status": "ok"}), 200
-
-    except Exception as e:
-        return jsonify({"erro": str(e)}), 500
+    return jsonify({"status": "ok"}), 200
 
 
-# =========================================
-# 🔹 RODAR APP
-# =========================================
+# =========================
+# START
+# =========================
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+    app.run(debug=True)
