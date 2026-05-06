@@ -5,23 +5,26 @@ import requests
 import base64
 from io import BytesIO
 
-# IMPORT CORRETO (SEM TRADUÇÃO)
-try:
-    import qrcode
-    QR_AVAILABLE = True
-except ImportError:
-    QR_AVAILABLE = False
+# QR CODE (CORRETO)
+import qrcode
 
 app = Flask(__name__)
 
+# 🔐 COLOQUE SEU TOKEN REAL AQUI (PRODUÇÃO)
 ACCESS_TOKEN = "SEU_ACCESS_TOKEN_AQUI"
 
 
+# =========================
+# HEALTH CHECK
+# =========================
 @app.route("/", methods=["GET"])
 def home():
     return jsonify({"status": "online"}), 200
 
 
+# =========================
+# GERAR PAGAMENTO PIX
+# =========================
 @app.route("/pagamento", methods=["POST"])
 def pagamento():
 
@@ -49,41 +52,66 @@ def pagamento():
 
     response = requests.post(url, json=payload, headers=headers)
 
+    # =========================
+    # TRATAMENTO DE RESPOSTA
+    # =========================
     try:
         data = response.json()
-    except:
+    except Exception:
         return jsonify({
-            "erro": "Resposta inválida",
+            "erro": "Resposta inválida do Mercado Pago",
             "texto": response.text
         }), 500
 
     if "error" in data:
-        return jsonify(data), 400
+        return jsonify({
+            "erro": "Erro Mercado Pago",
+            "detalhe": data
+        }), 400
 
-    qr_code = data["point_of_interaction"]["transaction_data"]["qr_code"]
+    # =========================
+    # EXTRAI QR CODE
+    # =========================
+    try:
+        qr_code = data["point_of_interaction"]["transaction_data"]["qr_code"]
+    except KeyError:
+        return jsonify({
+            "erro": "QR Code não encontrado",
+            "resposta": data
+        }), 500
 
-    # 🔥 LIMPEZA CRÍTICA
+    # LIMPEZA
     qr_code = qr_code.replace(" ", "").replace("\n", "").strip()
 
-    qr_base64 = None
-
-    if QR_AVAILABLE:
-        qr = qrcode.make(qr_code)
-        buffer = BytesIO()
-        qr.save(buffer, format="PNG")
-        qr_base64 = base64.b64encode(buffer.getvalue()).decode()
+    # =========================
+    # GERA IMAGEM QR (BASE64)
+    # =========================
+    buffer = BytesIO()
+    qr_img = qrcode.make(qr_code)
+    qr_img.save(buffer, format="PNG")
+    qr_base64 = base64.b64encode(buffer.getvalue()).decode()
 
     return jsonify({
+        "status": "ok",
         "qr_code": qr_code,
         "qr_code_base64": qr_base64
-    })
+    }), 200
 
 
+# =========================
+# WEBHOOK (CONFIRMAÇÃO)
+# =========================
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    print("WEBHOOK:", request.json)
-    return jsonify({"ok": True})
+
+    data = request.json
+    print("WEBHOOK RECEBIDO:", data)
+
+    return jsonify({"status": "ok"}), 200
 
 
+# =========================
+# START SERVER
+# =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
