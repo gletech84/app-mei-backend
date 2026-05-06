@@ -1,117 +1,67 @@
-# app.py
-
 from flask import Flask, request, jsonify
-import requests
-import base64
-from io import BytesIO
-
-# QR CODE (CORRETO)
 import qrcode
+import io
+import base64
 
 app = Flask(__name__)
 
-# 🔐 COLOQUE SEU TOKEN REAL AQUI (PRODUÇÃO)
-ACCESS_TOKEN = "SEU_ACCESS_TOKEN_AQUI"
+
+# 🔹 Função para gerar QR Code em base64
+def gerar_qr_code_pix(copia_cola: str):
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        box_size=10,
+        border=4,
+    )
+    qr.add_data(copia_cola)
+    qr.make(fit=True)
+
+    img = qr.make_image(fill_color="black", back_color="white")
+
+    buffer = io.BytesIO()
+    img.save(buffer, format="PNG")
+    buffer.seek(0)
+
+    img_base64 = base64.b64encode(buffer.read()).decode("utf-8")
+
+    return img_base64
 
 
-# =========================
-# HEALTH CHECK
-# =========================
-@app.route("/", methods=["GET"])
+# 🔹 Rota principal
+@app.route("/")
 def home():
-    return jsonify({"status": "online"}), 200
-
-
-# =========================
-# GERAR PAGAMENTO PIX
-# =========================
-@app.route("/pagamento", methods=["POST"])
-def pagamento():
-
-    url = "https://api.mercadopago.com/v1/payments"
-
-    headers = {
-        "Authorization": f"Bearer {ACCESS_TOKEN}",
-        "Content-Type": "application/json"
-    }
-
-    payload = {
-        "transaction_amount": 10,
-        "description": "Assinatura App MEI",
-        "payment_method_id": "pix",
-        "payer": {
-            "email": "cliente@teste.com",
-            "first_name": "Cliente",
-            "last_name": "Teste",
-            "identification": {
-                "type": "CPF",
-                "number": "19119119100"
-            }
-        }
-    }
-
-    response = requests.post(url, json=payload, headers=headers)
-
-    # =========================
-    # TRATAMENTO DE RESPOSTA
-    # =========================
-    try:
-        data = response.json()
-    except Exception:
-        return jsonify({
-            "erro": "Resposta inválida do Mercado Pago",
-            "texto": response.text
-        }), 500
-
-    if "error" in data:
-        return jsonify({
-            "erro": "Erro Mercado Pago",
-            "detalhe": data
-        }), 400
-
-    # =========================
-    # EXTRAI QR CODE
-    # =========================
-    try:
-        qr_code = data["point_of_interaction"]["transaction_data"]["qr_code"]
-    except KeyError:
-        return jsonify({
-            "erro": "QR Code não encontrado",
-            "resposta": data
-        }), 500
-
-    # LIMPEZA
-    qr_code = qr_code.replace(" ", "").replace("\n", "").strip()
-
-    # =========================
-    # GERA IMAGEM QR (BASE64)
-    # =========================
-    buffer = BytesIO()
-    qr_img = qrcode.make(qr_code)
-    qr_img.save(buffer, format="PNG")
-    qr_base64 = base64.b64encode(buffer.getvalue()).decode()
-
     return jsonify({
         "status": "ok",
-        "qr_code": qr_code,
-        "qr_code_base64": qr_base64
-    }), 200
+        "message": "API PIX rodando corretamente"
+    })
 
 
-# =========================
-# WEBHOOK (CONFIRMAÇÃO)
-# =========================
-@app.route("/webhook", methods=["POST"])
-def webhook():
-
+# 🔹 Gerar PIX + QR Code
+@app.route("/pix", methods=["POST"])
+def criar_pix():
     data = request.json
-    print("WEBHOOK RECEBIDO:", data)
 
-    return jsonify({"status": "ok"}), 200
+    valor = data.get("valor", "10.00")
+    nome = data.get("nome", "Cliente")
+
+    # ⚠️ Aqui você pode substituir por integração real do banco
+    copia_cola = (
+        "00020126580014br.gov.bcb.pix0136EXEMPLO-PIX-CHAVE520400005303986540"
+        + valor +
+        "5802BR5913"
+        + nome +
+        "6009SAO PAULO62070503***6304"
+    )
+
+    qr_base64 = gerar_qr_code_pix(copia_cola)
+
+    return jsonify({
+        "qr_code": copia_cola,
+        "qr_code_base64": qr_base64
+    })
 
 
-# =========================
-# START SERVER
-# =========================
+# 🔹 Execução local
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+    app.run(host="0.0.0.0", port=5000)
