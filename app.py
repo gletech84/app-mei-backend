@@ -1,67 +1,80 @@
 from flask import Flask, request, jsonify
-import qrcode
-import io
-import base64
+import sqlite3
+from database import init_db
+from pix_service import criar_cobranca
 
 app = Flask(__name__)
 
+init_db()
 
-# 🔹 Função para gerar QR Code em base64
-def gerar_qr_code_pix(copia_cola: str):
-    qr = qrcode.QRCode(
-        version=1,
-        error_correction=qrcode.constants.ERROR_CORRECT_M,
-        box_size=10,
-        border=4,
+
+# =========================
+# 🧑 CRIAR USUÁRIO
+# =========================
+@app.route("/register", methods=["POST"])
+def register():
+    data = request.json
+
+    conn = sqlite3.connect("saas.db")
+    c = conn.cursor()
+
+    c.execute(
+        "INSERT INTO users (email, senha, plano) VALUES (?, ?, ?)",
+        (data["email"], data["senha"], data.get("plano", "basico"))
     )
-    qr.add_data(copia_cola)
-    qr.make(fit=True)
 
-    img = qr.make_image(fill_color="black", back_color="white")
+    conn.commit()
+    conn.close()
 
-    buffer = io.BytesIO()
-    img.save(buffer, format="PNG")
-    buffer.seek(0)
-
-    img_base64 = base64.b64encode(buffer.read()).decode("utf-8")
-
-    return img_base64
+    return jsonify({"status": "usuario criado"})
 
 
-# 🔹 Rota principal
-@app.route("/")
-def home():
-    return jsonify({
-        "status": "ok",
-        "message": "API PIX rodando corretamente"
-    })
-
-
-# 🔹 Gerar PIX + QR Code
-@app.route("/pix", methods=["POST"])
-def criar_pix():
+# =========================
+# 💰 GERAR PIX
+# =========================
+@app.route("/checkout", methods=["POST"])
+def checkout():
     data = request.json
 
     valor = data.get("valor", "10.00")
-    nome = data.get("nome", "Cliente")
 
-    # ⚠️ Aqui você pode substituir por integração real do banco
-    copia_cola = (
-        "00020126580014br.gov.bcb.pix0136EXEMPLO-PIX-CHAVE520400005303986540"
-        + valor +
-        "5802BR5913"
-        + nome +
-        "6009SAO PAULO62070503***6304"
-    )
+    pix = criar_cobranca(valor, "SUA_CHAVE_PIX")
 
-    qr_base64 = gerar_qr_code_pix(copia_cola)
-
-    return jsonify({
-        "qr_code": copia_cola,
-        "qr_code_base64": qr_base64
-    })
+    return jsonify(pix)
 
 
-# 🔹 Execução local
+# =========================
+# 🔔 WEBHOOK PIX
+# =========================
+@app.route("/webhook/pix", methods=["POST"])
+def webhook():
+    data = request.json
+
+    txid = data.get("txid")
+    status = data.get("status")
+
+    conn = sqlite3.connect("saas.db")
+    c = conn.cursor()
+
+    c.execute("INSERT INTO pagamentos (txid, status, user_id) VALUES (?, ?, ?)",
+              (txid, status, 1))
+
+    if status == "CONCLUIDA":
+        c.execute("UPDATE users SET ativo = 1 WHERE id = 1")
+
+    conn.commit()
+    conn.close()
+
+    return jsonify({"ok": True})
+
+
+# =========================
+# 🌐 STATUS
+# =========================
+@app.route("/")
+def home():
+    return jsonify({"status": "SAAS PIX ONLINE"})
+
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
