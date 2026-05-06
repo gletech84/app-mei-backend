@@ -1,11 +1,10 @@
 from flask import Flask, render_template, request, redirect, session, jsonify
-from database import init_db
-from auth import login_user
+from database import init_db, get_user
 from pix import criar_pix
 import sqlite3
 
 app = Flask(__name__)
-app.secret_key = "saas-secret"
+app.secret_key = "saas-secret-key"
 
 init_db()
 
@@ -19,7 +18,10 @@ def login():
         email = request.form["email"]
         senha = request.form["senha"]
 
-        if login_user(email, senha):
+        user = get_user(email, senha)
+
+        if user:
+            session["user_id"] = user[0]
             return redirect("/dashboard")
 
     return render_template("login.html")
@@ -63,9 +65,6 @@ def webhook():
 
     conn = sqlite3.connect("saas.db")
     c = conn.cursor()
-
-    c.execute("INSERT INTO pagamentos (txid, status, user_id) VALUES (?, ?, ?)",
-              (txid, status, 1))
 
     if status == "CONCLUIDA":
         c.execute("UPDATE users SET ativo=1 WHERE id=1")
