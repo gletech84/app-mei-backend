@@ -1,5 +1,5 @@
-pyjwt
-psycopg2-binary
-flask
+Flask
 gunicorn
+psycopg2-binary
+PyJWT
 mercadopago
