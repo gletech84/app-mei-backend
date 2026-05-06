@@ -9,7 +9,9 @@ import mercadopago
 app = Flask(__name__)
 CORS(app)
 
-# 🔐 CONFIG
+# =========================
+# CONFIG
+# =========================
 SECRET_KEY = os.getenv("SECRET_KEY")
 DATABASE_URL = os.getenv("DATABASE_URL")
 MP_ACCESS_TOKEN = os.getenv("MP_ACCESS_TOKEN")
@@ -68,7 +70,7 @@ def register():
 
 
 # =========================
-# LOGIN (JWT CORRIGIDO)
+# LOGIN
 # =========================
 @app.route("/login", methods=["POST"])
 def login():
@@ -85,7 +87,6 @@ def login():
 
     token = jwt.encode(payload, SECRET_KEY, algorithm="HS256")
 
-    # 🔥 GARANTE STRING (corrige erro "Not enough segments")
     if isinstance(token, bytes):
         token = token.decode("utf-8")
 
@@ -151,6 +152,58 @@ def criar_pagamento():
             "qr_code": qr_code,
             "qr_code_base64": qr_code_base64
         })
+
+    except Exception as e:
+        return jsonify({"erro": str(e)}), 500
+
+
+# =========================
+# WEBHOOK MERCADO PAGO
+# =========================
+@app.route("/webhook", methods=["POST"])
+def webhook():
+    try:
+        data = request.json
+
+        if not data:
+            return jsonify({"status": "sem dados"}), 200
+
+        # Mercado Pago envia tipo notification
+        if data.get("type") != "payment":
+            return jsonify({"status": "ignorado"}), 200
+
+        payment_id = data["data"]["id"]
+
+        sdk = mercadopago.SDK(MP_ACCESS_TOKEN)
+        payment = sdk.payment().get(payment_id)
+
+        response = payment["response"]
+
+        status = response.get("status")
+        email = response.get("payer", {}).get("email")
+
+        # 🔥 SÓ LIBERA SE PAGAMENTO APROVADO
+        if status == "approved" and email:
+
+            conn = get_connection()
+            cur = conn.cursor()
+
+            cur.execute("""
+                UPDATE users
+                SET plano = 'premium'
+                WHERE email = %s;
+            """, (email,))
+
+            conn.commit()
+            cur.close()
+            conn.close()
+
+            return jsonify({
+                "status": "usuário atualizado para premium",
+                "email": email
+            })
+
+        return jsonify({"status": "pagamento não aprovado"}), 200
 
     except Exception as e:
         return jsonify({"erro": str(e)}), 500
