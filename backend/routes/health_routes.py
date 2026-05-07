@@ -4,7 +4,4 @@ router = APIRouter()
 
 @router.get("/")
 def health():
-    return {
-        "status": "ok",
-        "service": "saas-backend"
-    }
+    return {"status": "ok", "service": "saas-backend"}
