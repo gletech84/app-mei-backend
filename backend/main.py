@@ -1,11 +1,17 @@
 from fastapi import FastAPI
 
-from backend.routes.auth_routes import router as auth_router
-from backend.routes.sync_routes import router as sync_router
-from backend.routes.health_routes import router as health_router
+app = FastAPI(title="APP_MEI API", version="1.0")
 
-app = FastAPI(title="APP MEI SaaS Backend")
+@app.get("/")
+def home():
+    return {
+        "status": "ok",
+        "message": "APP_MEI rodando com sucesso"
+    }
 
-app.include_router(health_router)
-app.include_router(auth_router)
-app.include_router(sync_router)
+
+@app.get("/health")
+def health():
+    return {
+        "status": "healthy"
+    }
