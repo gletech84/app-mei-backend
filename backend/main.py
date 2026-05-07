@@ -1,17 +1,13 @@
 from fastapi import FastAPI
 
-app = FastAPI(title="APP_MEI API", version="1.0")
+app = FastAPI(title="APP_MEI")
+
+# importa rotas organizadas
+from backend.routes import users, auth
+
+app.include_router(users.router)
+app.include_router(auth.router)
 
 @app.get("/")
 def home():
-    return {
-        "status": "ok",
-        "message": "APP_MEI rodando com sucesso"
-    }
-
-
-@app.get("/health")
-def health():
-    return {
-        "status": "healthy"
-    }
+    return {"status": "APP_MEI online", "version": "1.0"}
