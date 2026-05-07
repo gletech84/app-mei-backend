@@ -6,9 +6,6 @@ from backend.routes.health_routes import router as health_router
 
 app = FastAPI(title="APP MEI SaaS Backend")
 
-# =========================
-# ROUTERS
-# =========================
 app.include_router(health_router)
 app.include_router(auth_router)
 app.include_router(sync_router)
