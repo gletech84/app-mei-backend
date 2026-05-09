@@ -1,2 +1,8 @@
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+.env
+.git
+.gitignore
+backend/__pycache__/
