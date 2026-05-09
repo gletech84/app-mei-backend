@@ -2,14 +2,11 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# evita bugs de build
 RUN pip install --upgrade pip setuptools wheel
 
-# dependências
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# código
 COPY . .
 
 ENV PORT=10000
