@@ -1,5 +1,5 @@
 from flask import jsonify
-from users.user_model import User
+from backend.users.user_model import User
 
 usuarios = []
 

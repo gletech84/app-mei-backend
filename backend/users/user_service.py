@@ -1,4 +1,4 @@
-from users.user_repository import criar_usuario, buscar_usuario
+from backend.users.user_repository import criar_usuario, buscar_usuario
 
 def registrar_ou_buscar(email):
     criar_usuario(email)

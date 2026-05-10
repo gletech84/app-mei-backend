@@ -1,4 +1,4 @@
-from auth.jwt import gerar_token
+from backend.auth.jwt import gerar_token
 
 def login_usuario(email):
     token = gerar_token(email)

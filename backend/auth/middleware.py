@@ -1,5 +1,5 @@
 from flask import request, jsonify
-from auth.jwt import validar_token
+from backend.auth.jwt import validar_token
 
 def login_required(func):
     def wrapper(*args, **kwargs):

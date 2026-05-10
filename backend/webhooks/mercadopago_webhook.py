@@ -1,7 +1,10 @@
 from flask import Blueprint, request
-from billing.subscription_service import processar_pagamento
+
+from backend.billing.subscription_service import processar_pagamento
+
 
 webhook = Blueprint("webhook", __name__)
+
 
 @webhook.route("/webhook", methods=["POST"])
 def receber_webhook():
